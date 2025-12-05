@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+
+# Ignore CSVs mari (cele de debugging)
+*.csv
+
+# Ignore Jupyter notebooks dacă nu vrei să fie urmărite
+*.ipynb
+
+# Fișiere temporare
+session.id
