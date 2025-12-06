@@ -1,9 +1,9 @@
 steps made to create the frontend
 
 1. npm create vite@latest .
-2. 
+2. npm run dev ---------- to run frontend
 
 
 
-run uvicorn backend:app --reload
-in the backend dir
+run in the backend dir
+1. uvicorn backend:app --reload

@@ -6,10 +6,9 @@ import json
 
 app = FastAPI()
 
-# Allow your React app (running on localhost:3000) to access the backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  
+    allow_origins=["*"],  # allow frontend (Vite, React) to access
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
