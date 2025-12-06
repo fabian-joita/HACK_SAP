@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 from uuid import UUID
 
+# Import DTOs and logger as before
+from rotables.dto.dto import HourResponse, FlightEvent, FlightEventType
+from rotables.services.debug_logger import log_debug
+
 from rotables.dto.dto import (
     HourResponse,
     FlightEvent,
@@ -21,11 +25,24 @@ class GameState:
     - oferă zborurile CHECKED_IN care trebuie încărcate ACUM
     """
 
+    # --- NEW STATIC DATA FIELDS ---
+    # These must be loaded once and stored here for the Planner and Strategy
+    flight_plan: Dict[str, 'FlightPlanEntry'] = field(default_factory=dict)
+    airports: Dict[str, 'Airport'] = field(default_factory=dict)
+    aircraft_types: Dict[str, 'AircraftType'] = field(default_factory=dict)
+    # ------------------------------
+
+    # --- NEW FIELD REQUIRED FOR THE FIX ---
+    # This stores the specific flight instances from flights.csv (keyed by UUID)
+    flight_schedule: Dict[str, 'FlightInstance'] = field(default_factory=dict) 
+    # --------------------------------------
+
     aircraft_caps: Dict[str, Dict] = field(default_factory=dict)
 
     flights: Dict[UUID, FlightEvent] = field(default_factory=dict)
 
     timeline_log: List[Dict] = field(default_factory=list)
+
 
     # ---------------------------------------------------------------------
     # INGEST RESPONSE

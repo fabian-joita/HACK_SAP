@@ -6,6 +6,8 @@ import os
 from rotables.services.api_client import ApiClient
 from rotables.services.loader import Loader
 from rotables.services.strategy import Strategy
+from rotables.services.planner import Planner
+from rotables.services.inventory_simulator import InventorySimulator
 from rotables.models.state import GameState
 from rotables.dto.dto import HourRequest
 from rotables.services.debug_logger import (
@@ -56,7 +58,15 @@ def main():
     aircraft_caps = loader.load_aircraft_types()
     state = GameState(aircraft_caps=aircraft_caps)
     api = ApiClient()
-    strategy = Strategy()
+
+    # NEW: Initialize Planner and InventorySimulator
+    # (Assuming state has been fully initialized with flights, airports, etc.)
+    planner = Planner(state) 
+    inventory_simulator = InventorySimulator(state.airports) 
+    # print(f"HUB1 FC Initial Stock: {inventory_simulator.inventory.get('381fada9-f9a0-4ee4-a994-228b88e53d35').fc}")
+    
+    # NEW: Pass them to the strategy
+    strategy = Strategy(planner, inventory_simulator)
 
     # ----------------------------------------------------------
     # DO NOT DELETE session.id ANYMORE!!!
