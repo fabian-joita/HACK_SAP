@@ -103,7 +103,6 @@ def main():
         debug_print(f"\n[ROUND] {resp.day}:{resp.hour} cost={resp.total_cost}")
 
         if resp.day == 29 and resp.hour == 23:
-            api.end_session()
             break
 
         hour += 1
@@ -111,12 +110,9 @@ def main():
             hour = 0
             day += 1
 
-    final = api.end_session()
     debug_print("\n=== SIMULATION END ===")
-    if final:
-        debug_print("FINAL COST:", final.total_cost)
-    else:
-        debug_print("SESSION CLOSED BY BACKEND")
+    
+    debug_print("SESSION CLOSED BY BACKEND")
 
 
 if __name__ == "__main__":
