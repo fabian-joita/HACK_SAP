@@ -3,6 +3,7 @@
 import csv
 import os
 
+from rotables.models import state
 from rotables.services.api_client import ApiClient
 from rotables.services.loader import Loader
 from rotables.services.strategy import Strategy
@@ -78,7 +79,18 @@ def main():
     hour = 0
 
     while True:
-        req = strategy.build_hour_request(day, hour, state)
+        req: HourRequest = strategy.build_hour_request(day, hour, state)
+
+        print("\n--- LOAD DECISIONS ---")
+        for fl in req.flight_loads:
+            print(f"LOAD  Flight={fl.flight_id}  "
+                f"FC={fl.loaded_kits.first}  "
+                f"BC={fl.loaded_kits.business}  "
+                f"PE={fl.loaded_kits.premium_economy}  "
+                f"EC={fl.loaded_kits.economy}")
+
+
+        # req = strategy.build_hour_request(day, hour, state)
         log_request(day, hour, req, state)
 
         resp = api.play_round(req)
