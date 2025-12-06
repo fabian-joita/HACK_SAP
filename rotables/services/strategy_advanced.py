@@ -158,7 +158,7 @@ class StrategyAdvanced:
 
             # Lăsăm un headroom (10–15%) ca să nu umplem exact la limită,
             # fiindcă mai pot veni și alte zboruri în același hour.
-            headroom_ratio = 0.15
+            headroom_ratio = 0.20
 
             def safe_room(cap, current):
                 if cap is None:
