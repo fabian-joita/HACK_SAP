@@ -2,74 +2,82 @@
 
 from rotables.dto.dto import HourRequest, FlightLoad, PerClassAmount
 from rotables.models.state import GameState
+from rotables.models.inventory import Inventory  # probabil există deja; ok dacă e unused
 
 
 class StrategyAdvanced:
     """
-    Strategie D – HYBRID + Protecție Capacitate
+    StrategyAdvanced v4 — UNIVERSAL-STABLE + FORECAST
 
-    - LOADING (decide_load):
-        * bazat pe Strategy B (1 kit / pasager, limitat de stoc + avion);
-        * pe aeroporturi NON-HUB1 folosim doar o parte din stoc (buffer);
-        * înainte să încărcăm, verificăm și capacitatea aeroportului de destinație
-          ca să evităm INVENTORY_EXCEEDS_CAPACITY.
-
-    - PURCHASING (decide_purchasing):
-        * doar în HUB1;
-        * 3 zone (UNDERSTOCK / LOW STOCK / OVERSTOCK);
-        * suplimentar: nu cumpără peste ce încape fizic în HUB1,
-          ținând un mic headroom (10–15%).
+    Obiective:
+    - zero negative inventory (hard safety, inclusiv în remove_stock)
+    - zero over-capacity (guard simplu cu slack)
+    - folosim zborurile viitoare (GameState.future_flights) pentru forecast
+    - HUB1 = sursa principală, dar NU îl golim: păstrăm stock proporțional cu cererea viitoare
+    - outstation-urile primesc doar ce își pot permite să piardă fără să-și rupă viitorul
     """
 
     def __init__(self, state_manager, aircraft_caps):
         self.sm = state_manager
         self.aircraft_caps = aircraft_caps
-
-        # flight_id -> PerClassAmount încărcat la decolare (dacă vrei debugging ulterior)
         self.last_loads = {}
 
+        # pentru informații interne / debugging
+        self.current_day = 0
+        self.current_hour = 0
+
     # ===========================================================
-    # MAIN ENTRY – se apelează din main.py la fiecare oră
+    #                    MAIN ENTRY PER ORĂ
     # ===========================================================
     def build_hour_request(self, day: int, hour: int, state: GameState) -> HourRequest:
-        """
-        La fiecare oră:
-          1. aplicăm procesările care s-au terminat;
-          2. aflăm zborurile care pleacă acum;
-          3. decidem câte kituri încărcăm pe fiecare zbor;
-          4. decidem ce cumpărăm în HUB1;
-          5. construim HourRequest pentru backend.
-        """
+        self.current_day = day
+        self.current_hour = hour
 
-        # 1. eliberăm kituri procesate care au ajuns la maturitate
+        # 1) procesăm pipeline-ul intern (washing, kitting etc.)
         self.sm.apply_processing(day, hour)
 
-        # 2. zboruri de încărcat în această oră
         loads = []
-        flights = state.pop_flights_to_load()
 
-        for ev in flights:
-            # 3. decizie de încărcare
-            fl = self.decide_load(ev)
+        # 2) luăm zborurile care trebuie încărcate ACUM
+        flights_to_load = state.pop_flights_to_load()
+
+        for ev in flights_to_load:
+            fl = self.decide_load(ev, state)
             loads.append(fl)
-
-            # memorăm câte kituri am încărcat pe acest flight_id
             self.last_loads[ev.flight_id] = fl.loaded_kits
 
-            # 3b. scădem din stocul aeroportului de origine
             lk = fl.loaded_kits
+
+            # HARD SAFETY EXTRA la remove_stock:
+            #   nu scoatem NICIODATĂ mai mult decât există, chiar dacă
+            #   între timp altceva a modificat stocul.
+            origin_stock = self.sm.get_stock_inventory(ev.origin_airport)
+
+            safe_fc = min(lk.first, origin_stock.fc)
+            safe_bc = min(lk.business, origin_stock.bc)
+            safe_pe = min(lk.premium_economy, origin_stock.pe)
+            safe_ec = min(lk.economy, origin_stock.ec)
+
+            if safe_fc < 0:
+                safe_fc = 0
+            if safe_bc < 0:
+                safe_bc = 0
+            if safe_pe < 0:
+                safe_pe = 0
+            if safe_ec < 0:
+                safe_ec = 0
+
             self.sm.remove_stock(
                 ev.origin_airport,
-                lk.first,
-                lk.business,
-                lk.premium_economy,
-                lk.economy,
+                safe_fc,
+                safe_bc,
+                safe_pe,
+                safe_ec,
             )
 
-        # 4. decizie de cumpărare (doar HUB1, politică Strategy D)
+        # 3) cumpărări la HUB
         buying = self.decide_purchasing()
 
-        # 5. construim request-ul pentru API
         return HourRequest(
             day=day,
             hour=hour,
@@ -78,214 +86,199 @@ class StrategyAdvanced:
         )
 
     # ===========================================================
-    # LOADING – Strategy D
+    #                 FORECAST CERERE VIITOARE
     # ===========================================================
-    def decide_load(self, ev) -> FlightLoad:
+    def estimate_future_demand(
+        self,
+        origin_airport: str,
+        state: GameState,
+        exclude_flight_id=None,
+    ) -> PerClassAmount:
         """
-        Decide câte kituri încărcăm pentru un singur zbor.
+        Estimează cererea viitoare (pe toate zborurile programate din acel aeroport),
+        folosind GameState.future_flights.
 
-        Reguli:
-        - vrem 1 kit / pasager (dacă avem stoc);
-        - nu depășim capacitatea avionului;
-        - nu consumăm tot stocul pe aeroporturile NON-HUB1 (buffer local);
-        - nu trimitem către destinație mai mult decât poate încăpea
-          (aprox.) în capacitatea aeroportului destinație.
+        Nu folosim ore/zile aici (nu știm exact ce câmpuri ai în FlightEvent),
+        ci pur și simplu suma PAX pentru toate zborurile viitoare cu același origin.
         """
+        demand = PerClassAmount(
+            first=0,
+            business=0,
+            premium_economy=0,
+            economy=0,
+        )
 
+        # Dacă, din orice motiv, future_flights nu există, fallback pe active_flights
+        flights_dict = getattr(state, "future_flights", state.active_flights)
+
+        for fev in flights_dict.values():
+            if fev.origin_airport != origin_airport:
+                continue
+            if exclude_flight_id is not None and fev.flight_id == exclude_flight_id:
+                continue
+
+            pax = fev.passengers
+            demand.first += pax.first
+            demand.business += pax.business
+            demand.premium_economy += pax.premium_economy
+            demand.economy += pax.economy
+
+        return demand
+
+    # ===========================================================
+    #                 UNIVERSAL-STABLE LOADING v4
+    # ===========================================================
+    def decide_load(self, ev, state: GameState) -> FlightLoad:
         origin = ev.origin_airport
         dest = ev.destination_airport
         pax = ev.passengers
-        air_type = ev.aircraft_type
+        caps = self.aircraft_caps[ev.aircraft_type]
 
-        caps_plane = self.aircraft_caps[air_type]
-        st_origin = self.sm.get_stock_inventory(origin)
+        st_o = self.sm.get_stock_inventory(origin)
+        st_d = self.sm.get_stock_inventory(dest)
+        meta_d = self.sm.airports_meta.get(dest)
 
-        # ideal = câte kituri ne-ar trebui ca fiecare pasager să aibă unul
-        ideal_fc = pax.first
-        ideal_bc = pax.business
-        ideal_pe = pax.premium_economy
-        ideal_ec = pax.economy
+        # Capacități dest -> fallback mare dacă lipsesc meta-urile
+        cap_fc = getattr(meta_d, "capacity_fc", 10**9)
+        cap_bc = getattr(meta_d, "capacity_bc", 10**9)
+        cap_pe = getattr(meta_d, "capacity_pe", 10**9)
+        cap_ec = getattr(meta_d, "capacity_ec", 10**9)
 
-        # ---------------------------------------------------------
-        # 1) Stoc disponibil la ORIGIN (cu buffer pe aeroporturi NON-HUB1)
-        # ---------------------------------------------------------
-        if origin == "HUB1":
-            # În HUB1 putem folosi practic tot ce vedem
-            avail_fc = st_origin.fc
-            avail_bc = st_origin.bc
-            avail_pe = st_origin.pe
-            avail_ec = st_origin.ec
-        else:
-            # Aeroport secundar:
-            #  - păstrăm o rezervă serioasă ca să nu golim aeroportul
-            #  - valorile sunt un compromis între a ajuta pasagerii
-            #    și a nu crea NEGATIVE_INVENTORY în backend.
-            buffer_fc = max(5, int(st_origin.fc * 0.30))   # păstrăm ~30% sau min 5
-            buffer_bc = max(5, int(st_origin.bc * 0.30))
-            buffer_pe = max(5, int(st_origin.pe * 0.30))
-            buffer_ec = max(40, int(st_origin.ec * 0.50))  # păstrăm ~50% sau min 40
-
-            avail_fc = max(0, st_origin.fc - buffer_fc)
-            avail_bc = max(0, st_origin.bc - buffer_bc)
-            avail_pe = max(0, st_origin.pe - buffer_pe)
-            avail_ec = max(0, st_origin.ec - buffer_ec)
-
-        # ---------------------------------------------------------
-        # 2) Load inițial – limitat de pasageri + avion + stoc disponibil
-        # ---------------------------------------------------------
-        base_fc = min(avail_fc, ideal_fc, caps_plane["fc"])
-        base_bc = min(avail_bc, ideal_bc, caps_plane["bc"])
-        base_pe = min(avail_pe, ideal_pe, caps_plane["pe"])
-        base_ec = min(avail_ec, ideal_ec, caps_plane["ec"])
-
-        # ---------------------------------------------------------
-        # 3) Protecție INVENTORY_EXCEEDS_CAPACITY la DESTINAȚIE
-        # ---------------------------------------------------------
-        load_fc = base_fc
-        load_bc = base_bc
-        load_pe = base_pe
-        load_ec = base_ec
-
-        dest_meta = self.sm.airports_meta.get(dest)
-        if dest_meta is not None:
-            # Capacitate reală a aeroportului destinație
-            cap_fc = getattr(dest_meta, "capacity_fc", None)
-            cap_bc = getattr(dest_meta, "capacity_bc", None)
-            cap_pe = getattr(dest_meta, "capacity_pe", None)
-            cap_ec = getattr(dest_meta, "capacity_ec", None)
-
-            st_dest = self.sm.get_stock_inventory(dest)
-
-            # Lăsăm un headroom (10–15%) ca să nu umplem exact la limită,
-            # fiindcă mai pot veni și alte zboruri în același hour.
-            headroom_ratio = 0.20
-
-            def safe_room(cap, current):
-                if cap is None:
-                    return 10**9  # fallback foarte mare dacă lipsesc date
-                max_allowed = int(cap * (1.0 - headroom_ratio))
-                return max(0, max_allowed - current)
-
-            room_fc = safe_room(cap_fc, st_dest.fc)
-            room_bc = safe_room(cap_bc, st_dest.bc)
-            room_pe = safe_room(cap_pe, st_dest.pe)
-            room_ec = safe_room(cap_ec, st_dest.ec)
-
-            # Ajustăm încărcarea să nu depășească spațiul "safe" de la destinație
-            load_fc = min(load_fc, room_fc)
-            load_bc = min(load_bc, room_bc)
-            load_pe = min(load_pe, room_pe)
-            load_ec = min(load_ec, room_ec)
-
-        # ---------------------------------------------------------
-        # 4) Construim obiectul PerClassAmount cu valorile finale
-        # ---------------------------------------------------------
-        kits = PerClassAmount(
-            first=load_fc,
-            business=load_bc,
-            premium_economy=load_pe,
-            economy=load_ec,
+        # ------------------------------------------------------
+        # 1) Forecast simplu pe viitor (origin)
+        # ------------------------------------------------------
+        future = self.estimate_future_demand(
+            origin_airport=origin,
+            state=state,
+            exclude_flight_id=ev.flight_id,
         )
 
+        # ------------------------------------------------------
+        # 2) ORIGIN SAFETY (rezervă pentru zborurile viitoare)
+        # ------------------------------------------------------
+        if origin == "HUB1":
+            # HUB1: păstrăm mai mult, e sursa principală
+            safe_fc = int(future.first * 1.3)
+            safe_bc = int(future.business * 1.3)
+            safe_pe = int(future.premium_economy * 1.2)
+            safe_ec = int(future.economy * 1.2)
+        else:
+            # Outstation: păstrăm atât forecast cât și un buffer fix
+            base_fc = min(max(3, int(st_o.fc * 0.20)), 50)
+            base_bc = min(max(5, int(st_o.bc * 0.20)), 80)
+            base_pe = min(max(5, int(st_o.pe * 0.20)), 80)
+            base_ec = min(max(40, int(st_o.ec * 0.30)), 300)
+
+            safe_fc = max(base_fc, int(future.first * 1.1))
+            safe_bc = max(base_bc, int(future.business * 1.1))
+            safe_pe = max(base_pe, int(future.premium_economy * 1.1))
+            safe_ec = max(base_ec, int(future.economy * 1.1))
+
+        # nu putem rezerva mai mult decât avem
+        safe_fc = min(max(0, safe_fc), st_o.fc)
+        safe_bc = min(max(0, safe_bc), st_o.bc)
+        safe_pe = min(max(0, safe_pe), st_o.pe)
+        safe_ec = min(max(0, safe_ec), st_o.ec)
+
+        # stock disponibil de trimis acum (peste rezervă)
+        avail_fc = max(0, st_o.fc - safe_fc)
+        avail_bc = max(0, st_o.bc - safe_bc)
+        avail_pe = max(0, st_o.pe - safe_pe)
+        avail_ec = max(0, st_o.ec - safe_ec)
+
+        # ------------------------------------------------------
+        # 3) Base load = min(pax, stock disponibil, capacitate avion)
+        # ------------------------------------------------------
+        load_fc = min(pax.first, avail_fc, caps["fc"])
+        load_bc = min(pax.business, avail_bc, caps["bc"])
+        load_pe = min(pax.premium_economy, avail_pe, caps["pe"])
+        load_ec = min(pax.economy, avail_ec, caps["ec"])
+
+        # ------------------------------------------------------
+        # 4) DESTINATION GUARD – să nu depășim capacitățile dest-ului
+        # ------------------------------------------------------
+        slack = 30  # margine simplă, universală
+
+        def guard(cur, cap, ld):
+            free = cap - cur - slack
+            # free poate fi negativ, dar nu trimitem niciodată negativ
+            if free <= 0:
+                return 0
+            return min(ld, free)
+
+        load_fc = guard(st_d.fc, cap_fc, load_fc)
+        load_bc = guard(st_d.bc, cap_bc, load_bc)
+        load_pe = guard(st_d.pe, cap_pe, load_pe)
+        load_ec = guard(st_d.ec, cap_ec, load_ec)
+
+        # ------------------------------------------------------
+        # 5) HARD SAFETY: origin NU devine negativ niciodată
+        # ------------------------------------------------------
+        load_fc = max(0, min(load_fc, st_o.fc))
+        load_bc = max(0, min(load_bc, st_o.bc))
+        load_pe = max(0, min(load_pe, st_o.pe))
+        load_ec = max(0, min(load_ec, st_o.ec))
+
+        # ------------------------------------------------------
+        # 6) Construim FlightLoad
+        # ------------------------------------------------------
         return FlightLoad(
-            flight_id=ev.flight_id,
-            loaded_kits=kits,
+            ev.flight_id,
+            PerClassAmount(
+                first=int(load_fc),
+                business=int(load_bc),
+                premium_economy=int(load_pe),
+                economy=int(load_ec),
+            ),
         )
 
     # ===========================================================
-    # PURCHASING – Strategy D (HUB1 only)
+    #                 UNIVERSAL-STABLE PURCHASING
     # ===========================================================
     def decide_purchasing(self) -> PerClassAmount:
-        """
-        Politică de cumpărare HYBRID în HUB1 (Strategy D):
-
-        - UNDERSTOCK (foarte jos) → cumpărăm mai mult;
-        - LOW STOCK (un pic sub confort) → cumpărăm mai puțin (top-up);
-        - OVERSTOCK → nu cumpărăm nimic;
-        - În plus: nu cumpărăm peste ce încape în capacitatea HUB1,
-          păstrând un mic headroom de siguranță.
-        """
-
         hub = "HUB1"
         st = self.sm.get_stock_inventory(hub)
-        hub_meta = self.sm.airports_meta.get(hub, None)
+        meta = self.sm.airports_meta.get(hub)
 
-        # Praguri de referință (aprox. “minim confortabil”)
-        min_fc, min_bc, min_pe, min_ec = 300, 600, 800, 12_000
-
-        # “zona de mijloc” (între OK și overstock moderat)
-        mid_fc, mid_bc, mid_pe, mid_ec = 600, 1_200, 1_600, 20_000
-
-        # Limite peste care considerăm overstock serios
-        max_fc, max_bc, max_pe, max_ec = 3 * min_fc, 3 * min_bc, 3 * min_pe, 3 * min_ec
+        # capacități HUB1
+        cap_fc = getattr(meta, "capacity_fc", 10**9)
+        cap_bc = getattr(meta, "capacity_bc", 10**9)
+        cap_pe = getattr(meta, "capacity_pe", 10**9)
+        cap_ec = getattr(meta, "capacity_ec", 10**9)
 
         buy_fc = buy_bc = buy_pe = buy_ec = 0
 
-        # ---------- FIRST ----------
-        if st.fc < min_fc:
-            buy_fc = 150  # ușor redus față de varianta foarte agresivă
-        elif st.fc < mid_fc:
-            buy_fc = 80
+        # ------------------------------------------------------
+        # 1) ECO – menținem HUB1 între 30% și 70% din capacitate
+        # ------------------------------------------------------
+        low_ec = int(cap_ec * 0.30)
+        high_ec = int(cap_ec * 0.70)
 
-        # ---------- BUSINESS ----------
-        if st.bc < min_bc:
-            buy_bc = 250
-        elif st.bc < mid_bc:
-            buy_bc = 120
-
-        # ---------- PREMIUM ECO ----------
-        if st.pe < min_pe:
-            buy_pe = 250
-        elif st.pe < mid_pe:
-            buy_pe = 120
-
-        # ---------- ECONOMY ----------
-        if st.ec < min_ec:
-            buy_ec = 1_800
-        elif st.ec < mid_ec:
-            buy_ec = 900
-
-        # ---------- OVERSTOCK GUARD (logică de nivel) ----------
-        if st.fc > max_fc:
-            buy_fc = 0
-        if st.bc > max_bc:
-            buy_bc = 0
-        if st.pe > max_pe:
-            buy_pe = 0
-        if st.ec > max_ec:
+        if st.ec < low_ec:
+            desired = 8000  # cât am vrea să cumpărăm
+            free = max(0, high_ec - st.ec)
+            buy_ec = min(desired, free)
+        else:
             buy_ec = 0
 
-        # ---------- CAPACITY-AWARE GUARD pentru HUB1 ----------
-        if hub_meta is not None:
-            cap_fc = getattr(hub_meta, "capacity_fc", None)
-            cap_bc = getattr(hub_meta, "capacity_bc", None)
-            cap_pe = getattr(hub_meta, "capacity_pe", None)
-            cap_ec = getattr(hub_meta, "capacity_ec", None)
+        # hard cap pe oră – universal safe
+        buy_ec = min(buy_ec, 8000)
 
-            # Lăsăm 10% spațiu liber în HUB1
-            headroom_ratio = 0.10
+        # ------------------------------------------------------
+        # 2) FIRST / BUSINESS / PREMIUM ECO
+        # ------------------------------------------------------
+        if st.fc < 200:
+            buy_fc = min(100, max(0, cap_fc - st.fc - 20))
 
-            def clamp_to_capacity(cap, current, planned):
-                if cap is None:
-                    return planned
-                max_allowed = int(cap * (1.0 - headroom_ratio))
-                free_space = max(0, max_allowed - current)
-                return max(0, min(planned, free_space))
+        if st.bc < 300:
+            buy_bc = min(150, max(0, cap_bc - st.bc - 30))
 
-            buy_fc = clamp_to_capacity(cap_fc, st.fc, buy_fc)
-            buy_bc = clamp_to_capacity(cap_bc, st.bc, buy_bc)
-            buy_pe = clamp_to_capacity(cap_pe, st.pe, buy_pe)
-            buy_ec = clamp_to_capacity(cap_ec, st.ec, buy_ec)
-
-        # ---------- Hard cap global pe ora curentă (să nu explodeze costul) ----------
-        # Mai ales pe economy.
-        max_ec_per_hour = 4_000
-        if buy_ec > max_ec_per_hour:
-            buy_ec = max_ec_per_hour
+        if st.pe < 400:
+            buy_pe = min(150, max(0, cap_pe - st.pe - 30))
 
         return PerClassAmount(
-            first=buy_fc,
-            business=buy_bc,
-            premium_economy=buy_pe,
-            economy=buy_ec,
+            first=int(buy_fc),
+            business=int(buy_bc),
+            premium_economy=int(buy_pe),
+            economy=int(buy_ec),
         )
