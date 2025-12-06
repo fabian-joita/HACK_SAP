@@ -45,18 +45,19 @@ class StateManager:
     # ----------------------------------------------------------
     # REMOVE STOCK (loading into plane)
     # ----------------------------------------------------------
-    def remove_stock(self, airport: str, fc: int, bc: int, pe: int, ec: int):
+    def remove_stock(self, airport, fc, bc, pe, ec):
         st = self.stock[airport]
+
+        # Protecție: nu permitem niciodată negative
+        fc = min(fc, st.fc)
+        bc = min(bc, st.bc)
+        pe = min(pe, st.pe)
+        ec = min(ec, st.ec)
+
         st.fc -= fc
         st.bc -= bc
         st.pe -= pe
         st.ec -= ec
-
-        # safety
-        st.fc = max(0, st.fc)
-        st.bc = max(0, st.bc)
-        st.pe = max(0, st.pe)
-        st.ec = max(0, st.ec)
 
     # ----------------------------------------------------------
     # ADD STOCK
