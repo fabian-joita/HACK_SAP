@@ -5,9 +5,9 @@ import os
 
 from rotables.services.api_client import ApiClient
 from rotables.services.loader import Loader
-from rotables.services.strategy import Strategy
+from rotables.services.strategy_v2 import StrategyV2
 from rotables.models.state import GameState
-from rotables.dto.dto import HourRequest
+from rotables.dto.dto import HourRequest, PerClassAmount
 from rotables.services.debug_logger import (
     log_request,
     log_events,
@@ -48,7 +48,7 @@ def init_csv_files():
 
 def main():
 
-    print("\n=== ROTABLES ENGINE START ===\n")
+    print("\n=== ROTABLES ENGINE START (LP OPTIMIZER) ===\n")
 
     init_csv_files()
 
@@ -56,7 +56,7 @@ def main():
     aircraft_caps = loader.load_aircraft_types()
     state = GameState(aircraft_caps=aircraft_caps)
     api = ApiClient()
-    strategy = Strategy()
+    strategy = StrategyV2()
 
     # ----------------------------------------------------------
     # DO NOT DELETE session.id ANYMORE!!!
@@ -64,8 +64,41 @@ def main():
     print("[INFO] Starting or resuming session...")
     api.start_session()
 
+    # Try to detect current session time by making a test request
     day = 0
     hour = 0
+    
+    # Try with 0:0 first, if it fails, extract the expected time
+    try:
+        test_req = HourRequest(day=0, hour=0, flight_loads=[], 
+                              kit_purchasing_orders=PerClassAmount(0, 0, 0, 0))
+        resp = api.play_round(test_req)
+        # If successful, we start from 0:0
+        state.ingest_response(resp)
+        strategy.process_landed_flights(resp)
+        log_events(resp)
+        log_penalties(resp)
+        log_flight_debug(resp)
+        print(f"[ROUND] {resp.day}:{resp.hour} cost={resp.total_cost}")
+        
+        # Move to next hour
+        hour = resp.hour + 1
+        day = resp.day
+        if hour == 24:
+            hour = 0
+            day += 1
+    except RuntimeError as e:
+        # Extract expected time from error message
+        error_msg = str(e)
+        if "expected time" in error_msg:
+            import re
+            match = re.search(r'expected time \((\d+):(\d+)\)', error_msg)
+            if match:
+                day = int(match.group(1))
+                hour = int(match.group(2))
+                print(f"[INFO] Resuming session from day={day}, hour={hour}")
+            else:
+                raise
 
     while True:
         req = strategy.build_hour_request(day, hour, state)
@@ -74,6 +107,7 @@ def main():
         resp = api.play_round(req)
 
         state.ingest_response(resp)
+        strategy.process_landed_flights(resp)  # Update inventory when flights land
         log_events(resp)
         log_penalties(resp)
         log_flight_debug(resp)

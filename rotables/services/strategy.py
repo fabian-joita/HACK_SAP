@@ -37,5 +37,5 @@ class Strategy:
     def _decide_load(self, ev: FlightEvent) -> FlightLoad:
         return FlightLoad(
         flight_id=ev.flight_id,
-        loaded_kits=PerClassAmount(0, 0, 0, 0)
+        loaded_kits=PerClassAmount(1, 0, 0, 1)
     )
