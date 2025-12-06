@@ -5,7 +5,7 @@ import os
 
 from rotables.services.api_client import ApiClient
 from rotables.services.loader import Loader
-from rotables.services.strategy_v2 import StrategyV2
+from rotables.services.strategy import Strategy
 from rotables.models.state import GameState
 from rotables.dto.dto import HourRequest, PerClassAmount
 from rotables.services.debug_logger import (
@@ -56,7 +56,7 @@ def main():
     aircraft_caps = loader.load_aircraft_types()
     state = GameState(aircraft_caps=aircraft_caps)
     api = ApiClient()
-    strategy = StrategyV2()
+    strategy = Strategy()
 
     # ----------------------------------------------------------
     # DO NOT DELETE session.id ANYMORE!!!
@@ -75,7 +75,6 @@ def main():
         resp = api.play_round(test_req)
         # If successful, we start from 0:0
         state.ingest_response(resp)
-        strategy.process_landed_flights(resp)
         log_events(resp)
         log_penalties(resp)
         log_flight_debug(resp)
@@ -107,7 +106,6 @@ def main():
         resp = api.play_round(req)
 
         state.ingest_response(resp)
-        strategy.process_landed_flights(resp)  # Update inventory when flights land
         log_events(resp)
         log_penalties(resp)
         log_flight_debug(resp)
