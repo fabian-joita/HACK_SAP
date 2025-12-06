@@ -103,6 +103,7 @@ def main():
         debug_print(f"\n[ROUND] {resp.day}:{resp.hour} cost={resp.total_cost}")
 
         if resp.day == 29 and resp.hour == 23:
+            api.end_session()
             break
 
         hour += 1
