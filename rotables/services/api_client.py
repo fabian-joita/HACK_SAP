@@ -4,13 +4,13 @@ import os
 import requests
 from rotables.dto.dto import HourRequest, HourResponse
 
-BASE_URL = "http://127.0.0.1:8080/api/v1"
+BASE_URL = "https://hackaton2025-lsac-eval.cfapps.eu12.hana.ondemand.com/api/v1"
 SESSION_FILE = "session.id"
 
 
 class ApiClient:
     def __init__(self):
-        self.api_key = "6e083c01-eeac-476c-8b37-546150ec10c6"
+        self.api_key = "c3abbeb9-cf27-4c4a-9b60-288e56505756"
         self.session_id = None
 
     # ----------------------------------------------------------
