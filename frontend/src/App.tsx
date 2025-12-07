@@ -66,70 +66,63 @@ const App: React.FC = () => {
   return (
     <div className={darkMode ? "dark" : "light"}>
       {/* NAVBAR */}
-      <div className={`navbar ${darkMode ? "navbar-dark" : "navbar-light"}`}>
+      <nav className="navbar">
         <div className="nav-title">✈ Rotables Simulator</div>
         <button className="toggle-btn" onClick={() => setDarkMode(!darkMode)}>
           {darkMode ? "Light Mode" : "Dark Mode"}
         </button>
-      </div>
+      </nav>
 
-      {/* MAIN CONTENT */}
-      <div className="container" style={{ paddingTop: "120px" }}>
+      <main className="main-container">
         {/* HEADER */}
-        <header>
-          <h1>Simulation Dashboard</h1>
-          <div className="subtitle">Airline Rotables Logistics Analytics</div>
-        </header>
+        <section className="hero-card">
+          <h1 className="hero-title">Simulation Dashboard</h1>
+          <p className="hero-subtitle">Airline Rotables Logistics Analytics</p>
 
-        {/* RUN BUTTON */}
-        <button className="run-btn" onClick={runSimulation}>
-          {loading ? "✈ Running Simulation..." : "Run Simulation"}
-        </button>
+          <button className="run-btn" onClick={runSimulation}>
+            {loading ? "✈ Running Simulation..." : "Run Simulation"}
+          </button>
 
-        {/* PROGRESS BAR */}
-        {loading && (
-          <div className="progress-container fade-in">
-            <div className="progress-track">
-              <div className="progress-bar"></div>
-            </div>
-          </div>
-        )}
-
-        {/* COST SUMMARY */}
-        {dailyTotals.length > 0 && (
-          <div className="results-section fade-in">
-            <div className="results-header">
-              <div>
-                <h2>Total Cost</h2>
-                <p className="final-score">{totalCost.toLocaleString()}</p>
-              </div>
-
-              <div className="metrics-grid">
-                <div className="metric-card">
-                  <div className="metric-label">Highest Day</div>
-                  <div className="metric-value">{highest.toLocaleString()}</div>
-                </div>
-
-                <div className="metric-card">
-                  <div className="metric-label">Lowest Day</div>
-                  <div className="metric-value">{lowest.toLocaleString()}</div>
-                </div>
-
-                <div className="metric-card">
-                  <div className="metric-label">Total Days</div>
-                  <div className="metric-value">{dailyTotals.length}</div>
-                </div>
+          {loading && (
+            <div className="progress-container">
+              <div className="progress-track">
+                <div className="progress-bar" />
               </div>
             </div>
-          </div>
+          )}
+        </section>
+
+        {/* SUMMARY */}
+        {dailyTotals.length > 0 && (
+          <section className="card summary-card">
+            <h2>Simulation Summary</h2>
+            <div className="summary-grid">
+              <div className="summary-item">
+                <span>Total Cost </span>
+                <strong>{totalCost.toLocaleString()}</strong>
+              </div>
+              <div className="summary-item">
+                <span>Highest Day </span>
+                <strong>{highest.toLocaleString()}</strong>
+              </div>
+              <div className="summary-item">
+                <span>Lowest Day </span>
+                <strong>{lowest.toLocaleString()}</strong>
+              </div>
+              <div className="summary-item">
+                <span>Total Days </span>
+                <strong>{dailyTotals.length}</strong>
+              </div>
+            </div>
+          </section>
         )}
 
-        {/* DAILY COSTS */}
+        {/* DAILY COST CHART */}
         {dailyTotals.length > 0 && (
-          <div className="chart-container fade-in">
-            <h3>Daily Costs</h3>
-            <div style={{ width: "100%", height: 350 }}>
-              <ResponsiveContainer>
+          <section className="card">
+            <h2>Daily Costs</h2>
+            <div className="chart-box">
+              <ResponsiveContainer width="100%" height={350}>
                 <LineChart data={dailyTotals}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis dataKey="day" stroke="#e0e7ff" />
@@ -145,15 +138,15 @@ const App: React.FC = () => {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </section>
         )}
 
         {/* ROTABLES USAGE */}
         {rotablesUsage.length > 0 && (
-          <div className="chart-container fade-in">
-            <h3>Daily Rotables Usage</h3>
-            <div style={{ width: "100%", height: 350 }}>
-              <ResponsiveContainer>
+          <section className="card">
+            <h2>Daily Rotables Usage</h2>
+            <div className="chart-box">
+              <ResponsiveContainer width="100%" height={350}>
                 <LineChart data={rotablesUsage}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis dataKey="day" stroke="#e0e7ff" />
@@ -167,46 +160,41 @@ const App: React.FC = () => {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </section>
         )}
 
-        {/* KPI CARDS */}
+        {/* KPI GRID */}
         {rotablesUsage.length > 0 && (
-          <div className="scores-grid fade-in">
-            <div className="score-card">
-              <div className="score-label">Total FC Used</div>
-              <div className="score-value">{totalFC.toLocaleString()}</div>
-            </div>
-
-            <div className="score-card">
-              <div className="score-label">Total BC Used</div>
-              <div className="score-value">{totalBC.toLocaleString()}</div>
-            </div>
-
-            <div className="score-card">
-              <div className="score-label">Total PE Used</div>
-              <div className="score-value">{totalPE.toLocaleString()}</div>
-            </div>
-
-            <div className="score-card">
-              <div className="score-label">Total EC Used</div>
-              <div className="score-value">{totalEC.toLocaleString()}</div>
-            </div>
-          </div>
+          <section className="kpi-grid">
+            {[
+              { label: "Total FC Used ", value: totalFC, color: "#a78bfa" },
+              { label: "Total BC Used ", value: totalBC, color: "#4ade80" },
+              { label: "Total PE Used ", value: totalPE, color: "#facc15" },
+              { label: "Total EC Used ", value: totalEC, color: "#fb923c" },
+            ].map((k, i) => (
+              <div key={i} className="kpi-card">
+                <span className="kpi-label">{k.label}</span>
+                <span className="kpi-value" style={{ color: k.color }}>
+                  {k.value.toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </section>
         )}
 
         {/* STOCK TABLE */}
         {finalStocks.length > 0 && (
-          <div className="chart-container fade-in">
-            <h3>Final Airport Stocks</h3>
-            <StockTable stocks={finalStocks} dark={darkMode} />
-          </div>
+          <section className="card">
+            <h2>Final Airport Stocks</h2>
+            <StockTable stocks={finalStocks} />
+          </section>
         )}
+      </main>
 
-        <div className="footer-text">
-          Airline Rotables Simulator © {new Date().getFullYear()}
-        </div>
-      </div>
+      {/* FOOTER */}
+      <footer className="footer">
+        Airline Rotables Simulator © {new Date().getFullYear()}
+      </footer>
     </div>
   );
 };
