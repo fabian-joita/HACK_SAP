@@ -140,16 +140,19 @@ def main() -> None:
         prev_total_cost = total_cost
         daily_costs.append(hourly_cost)
 
-        debug_print(f"[ROUND] {resp.day}:{resp.hour} cost={total_cost}")
+        debug_print("\n=== ROUND SUMMARY ===")
+        debug_print(f"Time: {resp.day:02d}:{resp.hour:02d}")
+        debug_print(f"Total Cost: {total_cost:,.2f}")
 
         # ==========================
         # STOCK SNAPSHOT
         # ==========================
-        stock_snap = ", ".join(
-            f"{ap}=FC:{st.fc} BC:{st.bc} PE:{st.pe} EC:{st.ec}"
-            for ap, st in sm.stock.items()
-        )
-        debug_print(f"[STOCKS] {resp.day}:{resp.hour} {stock_snap}")
+        debug_print("\n--- STOCKS ---")
+        for ap, st in sm.stock.items():
+            debug_print(
+                f"{ap}: FC={st.fc} | BC={st.bc} | PE={st.pe} | EC={st.ec}"
+            )
+        debug_print(f"[STOCKS] {resp.day}:{resp.hour} recorded")
 
         # ==========================
         # END OF DAY SUMMARY
@@ -159,10 +162,11 @@ def main() -> None:
             avg_cost = day_total / len(daily_costs)
             end_day = resp.total_cost
 
-            debug_print(
-                f"[DAY] {resp.day} dailyTotal={day_total:.2f} "
-                f"avgCost={avg_cost:.2f} endOfDayCost={end_day:.2f}"
-            )
+            debug_print("\n=== DAY SUMMARY ===")
+            debug_print(f"Day: {resp.day}")
+            debug_print(f"Daily Total: {day_total:,.2f}")
+            debug_print(f"Average Hourly: {avg_cost:,.2f}")
+            debug_print(f"End Of Day Cost: {end_day:,.2f}")
 
             daily_costs = []
 
