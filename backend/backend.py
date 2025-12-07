@@ -1,4 +1,3 @@
-# backend/backend.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import subprocess
@@ -17,7 +16,7 @@ app.add_middleware(
 @app.get("/run-main")
 def run_main():
     try:
-        # Run the simulation
+        # Run simulation
         result = subprocess.run(
             ["python3", "-m", "rotables.main"],
             cwd="../",
@@ -28,72 +27,124 @@ def run_main():
 
         output = result.stdout + "\n" + result.stderr
 
-        # ---------------- Parse hourly costs ----------------
-        round_matches = re.findall(r'\[ROUND\]\s+(\d+):(\d+)\s+cost=(\d+\.?\d*)', output)
-        hourly_costs_flat = []
-        last_hour_cost = {}
-        for d, h, c in round_matches:
-            day, hour, cost = int(d), int(h), float(c)
-            hourly_costs_flat.append({"day": day, "hour": hour, "cost": cost})
-            last_hour_cost[day] = cost  # store latest hour cost for each day
+        # ============================================================
+        # 1) PARSE ROUND LINES (format: [ROUND] 0:5 cost=2758909.68)
+        # ============================================================
+        round_matches = re.findall(
+            r"\[ROUND\]\s*(\d+):(\d+)\s*cost=([-\d\.eE]+)",
+            output
+        )
 
-        # ---------------- Compute daily summary (cumulative correction) ----------------
-        sorted_days = sorted(last_hour_cost.keys())
-        daily_summary = []
+        hourlyCosts = []
         prev_total = 0.0
-        cumulative_total = 0.0
 
-        for day in sorted_days:
-            curr_total = last_hour_cost[day]
-            day_total = curr_total - prev_total  # today's cost only
-            prev_total = curr_total
-            cumulative_total += day_total
-            avg_cost = cumulative_total / (day + 1)  # average cost per day including previous days
-            daily_summary.append({
-                "day": day,
-                "endOfDayCost": day_total,
-                "avgCost": avg_cost
+        for d, h, total in round_matches:
+            total_cost = float(total)
+            hourly = total_cost - prev_total
+            prev_total = total_cost
+
+            hourlyCosts.append({
+                "day": int(d),
+                "hour": int(h),
+                "hourlyCost": hourly,
+                "totalCost": total_cost
             })
 
-        # ---------------- Parse stock snapshots ----------------
-        stock_matches = re.findall(r'\[STOCKS]\s+(\d+):(\d+)\s+(.*)', output)
-        stocks_by_day = {}
-        for d, h, stock_str in stock_matches:
-            day, hour = int(d), int(h)
-            airport_stocks = {}
-            entries = re.findall(r'(\w+)=FC:(\d+)\s+BC:(\d+)\s+PE:(\d+)\s+EC:(\d+)', stock_str)
-            for ap, fc, bc, pe, ec in entries:
-                airport_stocks[ap] = {"FC": int(fc), "BC": int(bc), "PE": int(pe), "EC": int(ec)}
-            stocks_by_day.setdefault(day, []).append(airport_stocks)
+        # ============================================================
+        # 2) PARSE DAY SUMMARY (full)
+        #
+        # [DAY] 0 dailyTotal=XXXXX avgCost=YYYY endOfDayCost=ZZZZ
+        # ============================================================
+        day_matches = re.findall(
+            r"\[DAY\]\s*(\d+)\s+dailyTotal=([-\d\.eE]+)\s+avgCost=([-\d\.eE]+)\s+endOfDayCost=([-\d\.eE]+)",
+            output
+        )
 
-        # ---------------- Compute rotables usage per day ----------------
-        rotables_usage_per_day = {}
-        for day, hours in stocks_by_day.items():
-            daily_usage = {"FC": 0, "BC": 0, "PE": 0, "EC": 0}
-            for i in range(1, len(hours)):
-                prev = hours[i-1]
-                curr = hours[i]
-                for ap in set(prev.keys()).union(curr.keys()):
-                    for cls in ["FC", "BC", "PE", "EC"]:
-                        prev_val = prev.get(ap, {}).get(cls, 0)
-                        curr_val = curr.get(ap, {}).get(cls, 0)
-                        used = max(prev_val - curr_val, 0)
-                        daily_usage[cls] += used
-            rotables_usage_per_day[day] = daily_usage
+        dailySummary = []
+        for d, daily, avg, endday in day_matches:
+            dailySummary.append({
+                "day": int(d),
+                "dailyTotal": float(daily),
+                "avgCost": float(avg),
+                "endOfDayCost": float(endday)
+            })
 
-        # ---------------- Convert rotables usage dict to array ----------------
-        rotables_usage_array = [
-            {"day": day, **usage} for day, usage in sorted(rotables_usage_per_day.items())
+        # ============================================================
+        # 2B) PARSE ONLY dailyTotal (for daily graph)
+        # ============================================================
+        day_totals_raw = re.findall(
+            r"\[DAY\]\s*(\d+)\s+dailyTotal=([-\d\.eE]+)",
+            output
+        )
+
+        dailyTotals = [
+            {"day": int(d), "dailyTotal": float(total)}
+            for d, total in day_totals_raw
         ]
 
+        # ============================================================
+        # 3) PARSE STOCKS
+        # ============================================================
+        stock_matches = re.findall(r"\[STOCKS]\s+(\d+):(\d+)\s+(.*)", output)
+        stocks_by_day = {}
+
+        for d, h, stock_str in stock_matches:
+            day, hour = int(d), int(h)
+
+            entries = re.findall(
+                r"(\w+)=FC:(\d+)\s+BC:(\d+)\s+PE:(\d+)\s+EC:(\d+)",
+                stock_str
+            )
+
+            airport_stocks = {
+                ap: {
+                    "FC": int(fc),
+                    "BC": int(bc),
+                    "PE": int(pe),
+                    "EC": int(ec)
+                }
+                for ap, fc, bc, pe, ec in entries
+            }
+
+            stocks_by_day.setdefault(day, []).append(airport_stocks)
+
+        # ============================================================
+        # 4) ROTABLES USAGE (per day)
+        # ============================================================
+        rotables_usage_per_day = {}
+
+        for day, snapshots in stocks_by_day.items():
+            daily = {"FC": 0, "BC": 0, "PE": 0, "EC": 0}
+
+            for i in range(1, len(snapshots)):
+                prev = snapshots[i - 1]
+                curr = snapshots[i]
+
+                airports = set(prev.keys()).union(curr.keys())
+
+                for ap in airports:
+                    for cls in daily:
+                        diff = prev.get(ap, {}).get(cls, 0) - curr.get(ap, {}).get(cls, 0)
+                        if diff > 0:
+                            daily[cls] += diff
+
+            rotables_usage_per_day[day] = daily
+
+        rotablesUsage = [
+            {"day": day, **usage}
+            for day, usage in sorted(rotables_usage_per_day.items())
+        ]
+
+        # ============================================================
+        # RETURN JSON FOR FRONTEND
+        # ============================================================
         return {
             "success": True,
-            "hourlyCosts": hourly_costs_flat,
-            "dailySummary": daily_summary,
-            "rotablesUsage": rotables_usage_array
+            "hourlyCosts": hourlyCosts,
+            "dailySummary": dailySummary,
+            "dailyTotals": dailyTotals,
+            "rotablesUsage": rotablesUsage
         }
 
-    except subprocess.CalledProcessError as e:
-        return {"success": False, "error": e.stderr}
     except Exception as e:
         return {"success": False, "error": str(e)}

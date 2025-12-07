@@ -6,13 +6,13 @@ import {
   YAxis,
   Tooltip,
   Legend,
-  CartesianGrid
+  CartesianGrid,
 } from "recharts";
+import StockTable from "./components/StockTable";
 
-type DailyCost = {
+type DailyTotal = {
   day: number;
-  endOfDayCost: number;
-  avgCost: number;
+  dailyTotal: number;
 };
 
 type RotablesUsage = {
@@ -23,9 +23,18 @@ type RotablesUsage = {
   EC: number;
 };
 
+interface Stock {
+  name: string;
+  FC: number;
+  BC: number;
+  PE: number;
+  EC: number;
+}
+
 const App: React.FC = () => {
-  const [dailyCosts, setDailyCosts] = useState<DailyCost[]>([]);
+  const [dailyTotals, setDailyTotals] = useState<DailyTotal[]>([]);
   const [rotablesUsage, setRotablesUsage] = useState<RotablesUsage[]>([]);
+  const [finalStocks, setFinalStocks] = useState<Stock[]>([]);
   const [loading, setLoading] = useState(false);
 
   const runSimulation = async () => {
@@ -34,8 +43,9 @@ const App: React.FC = () => {
       const res = await fetch("http://127.0.0.1:8000/run-main");
       const data = await res.json();
       if (data.success) {
-        setDailyCosts(data.dailySummary);
-        setRotablesUsage(data.rotablesUsage);
+        setDailyTotals(data.dailyTotals || []);
+        setRotablesUsage(data.rotablesUsage || []);
+        setFinalStocks(data.finalStocks || []);
       } else {
         console.error(data.error);
       }
@@ -45,21 +55,17 @@ const App: React.FC = () => {
     setLoading(false);
   };
 
-  // ---- TOTAL COST ----
-  const totalCost = dailyCosts.reduce(
-    (sum, d) => sum + d.endOfDayCost,
-    0
-  );
+  const totalCost = dailyTotals.reduce((sum, d) => sum + d.dailyTotal, 0);
 
   return (
     <div
       style={{
         padding: "2rem",
         fontFamily: "Arial",
-        textAlign: "center",          // CENTER EVERYTHING
+        textAlign: "center",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center"
+        alignItems: "center",
       }}
     >
       <h1>Simulation Dashboard</h1>
@@ -70,65 +76,55 @@ const App: React.FC = () => {
           padding: "10px 20px",
           fontSize: "16px",
           cursor: "pointer",
-          marginBottom: "20px"
+          marginBottom: "20px",
         }}
       >
         {loading ? "Running..." : "Run Simulation"}
       </button>
 
-      {/* TOTAL COST DISPLAY */}
-      {dailyCosts.length > 0 && (
-        <h2 style={{ marginBottom: "30px" }}>
-          Total Cost: <span style={{ color: "green" }}>{totalCost.toFixed(2)}</span>
+      {dailyTotals.length > 0 && (
+        <h2>
+          Total Cost:{" "}
+          <span style={{ color: "green" }}>{totalCost.toFixed(2)}</span>
         </h2>
       )}
 
-      {/* Daily Costs Chart */}
-      {dailyCosts.length > 0 && (
+      {dailyTotals.length > 0 && (
         <>
           <h2>Daily Costs</h2>
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <LineChart
-              width={800}
-              height={400}
-              data={dailyCosts}
-              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="day" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="endOfDayCost" stroke="#8884d8" />
-              <Line type="monotone" dataKey="avgCost" stroke="#82ca9d" />
-            </LineChart>
-          </div>
+          <LineChart width={800} height={400} data={dailyTotals}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="day" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Line type="monotone" dataKey="dailyTotal" stroke="#ff0000" />
+          </LineChart>
         </>
       )}
 
-      {/* Rotables Usage Chart */}
       {rotablesUsage.length > 0 && (
         <>
           <h2>Daily Rotables Usage</h2>
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <LineChart
-              width={800}
-              height={400}
-              data={rotablesUsage}
-              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="day" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="FC" stroke="#8884d8" />
-              <Line type="monotone" dataKey="BC" stroke="#82ca9d" />
-              <Line type="monotone" dataKey="PE" stroke="#ffc658" />
-              <Line type="monotone" dataKey="EC" stroke="#ff7300" />
-            </LineChart>
-          </div>
+          <LineChart width={800} height={400} data={rotablesUsage}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="day" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Line type="monotone" dataKey="FC" stroke="#8884d8" />
+            <Line type="monotone" dataKey="BC" stroke="#82ca9d" />
+            <Line type="monotone" dataKey="PE" stroke="#ffc658" />
+            <Line type="monotone" dataKey="EC" stroke="#ff7300" />
+          </LineChart>
         </>
+      )}
+
+      {/* STOCK TABLE */}
+      {finalStocks.length > 0 && (
+        <div style={{ marginTop: "50px" }}>
+          <StockTable stocks={finalStocks} />
+        </div>
       )}
     </div>
   );
