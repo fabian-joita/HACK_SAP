@@ -19,7 +19,6 @@ type RotablesUsage = {
   PE: number;
   EC: number;
 };
-
 interface Stock {
   name: string;
   FC: number;
@@ -45,7 +44,7 @@ const App: React.FC = () => {
         setRotablesUsage(data.rotablesUsage || []);
         setFinalStocks(data.finalStocks || []);
       }
-    } catch (err) {
+    } catch {
       console.error("Backend connection failed");
     }
     setLoading(false);
@@ -65,36 +64,26 @@ const App: React.FC = () => {
   const totalEC = rotablesUsage.reduce((s, r) => s + r.EC, 0);
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: darkMode ? "#111418" : "#f0f0f0",
-        color: darkMode ? "white" : "black",
-        paddingTop: "100px",
-        paddingLeft: "20px",
-        paddingRight: "20px",
-        transition: "0.3s",
-      }}
-    >
+    <div className={darkMode ? "dark" : "light"}>
       {/* NAVBAR */}
       <div className={`navbar ${darkMode ? "navbar-dark" : "navbar-light"}`}>
-        <div style={{ fontSize: "1.4rem", fontWeight: 700 }}>
-          ✈️ Rotables Simulator
-        </div>
-
-        <button onClick={() => setDarkMode(!darkMode)} className="toggle-btn">
+        <div className="nav-title">✈ Rotables Simulator</div>
+        <button className="toggle-btn" onClick={() => setDarkMode(!darkMode)}>
           {darkMode ? "Light Mode" : "Dark Mode"}
         </button>
       </div>
 
-      {/* CONTENT WRAPPER */}
-      <div style={{ maxWidth: "1300px", margin: "0 auto" }}>
-        <h1 className="title">Simulation Dashboard</h1>
-        <div className="subtitle">Airline Rotables Logistics Analytics</div>
+      {/* MAIN CONTENT */}
+      <div className="container" style={{ paddingTop: "120px" }}>
+        {/* HEADER */}
+        <header>
+          <h1>Simulation Dashboard</h1>
+          <div className="subtitle">Airline Rotables Logistics Analytics</div>
+        </header>
 
         {/* RUN BUTTON */}
-        <button onClick={runSimulation} className="run-btn">
-          {loading ? "✈️ Running Simulation..." : "Run Simulation"}
+        <button className="run-btn" onClick={runSimulation}>
+          {loading ? "✈ Running Simulation..." : "Run Simulation"}
         </button>
 
         {/* PROGRESS BAR */}
@@ -106,47 +95,47 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* TOTAL COST */}
+        {/* COST SUMMARY */}
         {dailyTotals.length > 0 && (
-          <div className="total-cost-text">
-            Total Cost: <span>{totalCost.toFixed(2)}</span>
+          <div className="results-section fade-in">
+            <div className="results-header">
+              <div>
+                <h2>Total Cost</h2>
+                <p className="final-score">{totalCost.toLocaleString()}</p>
+              </div>
+
+              <div className="metrics-grid">
+                <div className="metric-card">
+                  <div className="metric-label">Highest Day</div>
+                  <div className="metric-value">{highest.toLocaleString()}</div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-label">Lowest Day</div>
+                  <div className="metric-value">{lowest.toLocaleString()}</div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-label">Total Days</div>
+                  <div className="metric-value">{dailyTotals.length}</div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* SUMMARY CARD */}
+        {/* DAILY COSTS */}
         {dailyTotals.length > 0 && (
-          <div className="summary-card fade-in">
-            <div>
-              <h3>Simulation Summary</h3>
-              <div>Total Days: {dailyTotals.length}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div>Highest Day: {highest.toFixed(2)}</div>
-              <div>Lowest Day: {lowest.toFixed(2)}</div>
-            </div>
-          </div>
-        )}
-
-        {/* DAILY COST CHART */}
-        {dailyTotals.length > 0 && (
-          <div className="chart-card fade-in">
-            <h2>Daily Costs</h2>
-
+          <div className="chart-container fade-in">
+            <h3>Daily Costs</h3>
             <div style={{ width: "100%", height: 350 }}>
               <ResponsiveContainer>
                 <LineChart data={dailyTotals}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke={darkMode ? "#555" : "#ccc"}
-                  />
-                  <XAxis dataKey="day" stroke={darkMode ? "white" : "black"} />
-                  <YAxis stroke={darkMode ? "white" : "black"} />
-                  <Tooltip
-                    wrapperStyle={{ background: darkMode ? "#222" : "white" }}
-                  />
-                  <Legend
-                    wrapperStyle={{ color: darkMode ? "white" : "black" }}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="day" stroke="#e0e7ff" />
+                  <YAxis stroke="#e0e7ff" />
+                  <Tooltip />
+                  <Legend />
                   <Line
                     type="monotone"
                     dataKey="dailyTotal"
@@ -159,51 +148,22 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* ROTABLES USAGE CHART */}
+        {/* ROTABLES USAGE */}
         {rotablesUsage.length > 0 && (
-          <div className="chart-card fade-in">
-            <h2>Daily Rotables Usage</h2>
-
+          <div className="chart-container fade-in">
+            <h3>Daily Rotables Usage</h3>
             <div style={{ width: "100%", height: 350 }}>
               <ResponsiveContainer>
                 <LineChart data={rotablesUsage}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke={darkMode ? "#555" : "#ccc"}
-                  />
-                  <XAxis dataKey="day" stroke={darkMode ? "white" : "black"} />
-                  <YAxis stroke={darkMode ? "white" : "black"} />
-                  <Tooltip
-                    wrapperStyle={{ background: darkMode ? "#222" : "white" }}
-                  />
-                  <Legend
-                    wrapperStyle={{ color: darkMode ? "white" : "black" }}
-                  />
-
-                  <Line
-                    type="monotone"
-                    dataKey="FC"
-                    stroke="#a78bfa"
-                    strokeWidth={2}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="BC"
-                    stroke="#4ade80"
-                    strokeWidth={2}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="PE"
-                    stroke="#facc15"
-                    strokeWidth={2}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="EC"
-                    stroke="#fb923c"
-                    strokeWidth={2}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="day" stroke="#e0e7ff" />
+                  <YAxis stroke="#e0e7ff" />
+                  <Tooltip />
+                  <Legend />
+                  <Line dataKey="FC" stroke="#a78bfa" strokeWidth={2} />
+                  <Line dataKey="BC" stroke="#4ade80" strokeWidth={2} />
+                  <Line dataKey="PE" stroke="#facc15" strokeWidth={2} />
+                  <Line dataKey="EC" stroke="#fb923c" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -212,52 +172,33 @@ const App: React.FC = () => {
 
         {/* KPI CARDS */}
         {rotablesUsage.length > 0 && (
-          <div className="kpi-grid fade-in">
-            {[
-              {
-                label: "Total FC Used",
-                value: totalFC,
-                color: "#a78bfa",
-                icon: "🟪",
-              },
-              {
-                label: "Total BC Used",
-                value: totalBC,
-                color: "#4ade80",
-                icon: "🟩",
-              },
-              {
-                label: "Total PE Used",
-                value: totalPE,
-                color: "#facc15",
-                icon: "🟨",
-              },
-              {
-                label: "Total EC Used",
-                value: totalEC,
-                color: "#fb923c",
-                icon: "🟧",
-              },
-            ].map((k, index) => (
-              <div
-                key={index}
-                className="kpi-card"
-                style={{ background: darkMode ? "#1c1f25" : "white" }}
-              >
-                <div className="kpi-icon">{k.icon}</div>
-                <div className="kpi-label">{k.label}</div>
-                <div className="kpi-value" style={{ color: k.color }}>
-                  {k.value.toLocaleString()}
-                </div>
-              </div>
-            ))}
+          <div className="scores-grid fade-in">
+            <div className="score-card">
+              <div className="score-label">Total FC Used</div>
+              <div className="score-value">{totalFC.toLocaleString()}</div>
+            </div>
+
+            <div className="score-card">
+              <div className="score-label">Total BC Used</div>
+              <div className="score-value">{totalBC.toLocaleString()}</div>
+            </div>
+
+            <div className="score-card">
+              <div className="score-label">Total PE Used</div>
+              <div className="score-value">{totalPE.toLocaleString()}</div>
+            </div>
+
+            <div className="score-card">
+              <div className="score-label">Total EC Used</div>
+              <div className="score-value">{totalEC.toLocaleString()}</div>
+            </div>
           </div>
         )}
 
         {/* STOCK TABLE */}
         {finalStocks.length > 0 && (
-          <div className="chart-card fade-in">
-            <h2>Final Airport Stocks</h2>
+          <div className="chart-container fade-in">
+            <h3>Final Airport Stocks</h3>
             <StockTable stocks={finalStocks} dark={darkMode} />
           </div>
         )}
