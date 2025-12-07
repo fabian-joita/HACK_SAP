@@ -13,6 +13,18 @@ This project simulates *airline rotables logistics* and provides:
 
 ## Running the Console Application
 
+Add the Data Folder
+
+Create a folder named data inside HACK_SAP\rotables\: HACK_SAP\rotables\data
+Place the following CSV files inside the data folder:
+- aircraft_types.csv
+- airports_with_stocks.csv
+- airports.csv
+- flights.csv
+
+Example path for one file:
+HACK_SAP\rotables\data\aircraft_types.csv
+
 From the *root folder* HACK_SAP/, run:
 
 bash
