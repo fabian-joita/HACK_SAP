@@ -5,5 +5,9 @@ steps made to create the frontend
 
 
 
+to do in frontend
+
+npm install recharts
+
 run in the backend dir
 1. uvicorn backend:app --reload

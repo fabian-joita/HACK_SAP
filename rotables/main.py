@@ -44,29 +44,10 @@ def main():
     api.start_session()
 
     day, hour = 0, 0
+    daily_costs = []
 
     while True:
-
-        debug_print("\n==============================")
-        debug_print(f"⏰ DEBUG DAY {day} HOUR {hour}")
-        debug_print("==============================")
-
-        for ap, st in sm.stock.items():
-            debug_print(f"STOCK[{ap}]  FC={st.fc}  BC={st.bc}  PE={st.pe}  EC={st.ec}")
-
         req: HourRequest = strategy.build_hour_request(day, hour, state)
-
-        debug_print("\n--- LOAD DECISIONS ---")
-        for fl in req.flight_loads:
-            debug_print(f"LOAD Flight={fl.flight_id} "
-                        f"FC={fl.loaded_kits.first} "
-                        f"BC={fl.loaded_kits.business} "
-                        f"PE={fl.loaded_kits.premium_economy} "
-                        f"EC={fl.loaded_kits.economy}")
-
-        debug_print("\n--- PURCHASING ---")
-        debug_print(req.kit_purchasing_orders)
-
         resp = api.play_round(req)
 
         state.ingest_response(resp)
@@ -83,13 +64,9 @@ def main():
                 buy.economy
             )
 
-        debug_print("\n--- LANDINGS ---")
         for ev in resp.flight_updates:
             if ev.event_type.value == "LANDED":
                 used = strategy.last_loads.get(ev.flight_id)
-
-                debug_print(f"LANDING Flight={ev.flight_id} Used={used} → {ev.destination_airport}")
-
                 if used:
                     sm.apply_landing(
                         airport=ev.destination_airport,
@@ -97,23 +74,37 @@ def main():
                         day=resp.day,
                         hour=resp.hour
                     )
-
                 strategy.last_loads.pop(ev.flight_id, None)
 
-        debug_print(f"\n[ROUND] {resp.day}:{resp.hour} cost={resp.total_cost}")
+        # --- Hourly cost ---
+        debug_print(f"[ROUND] {resp.day}:{resp.hour} cost={resp.total_cost}")
+        daily_costs.append(resp.total_cost)
 
-        if resp.day == 29 and resp.hour == 23:
-            break
+        # --- Hourly stock snapshot per airport ---
+        stock_snapshot = ", ".join(
+            f"{ap}=FC:{st.fc} BC:{st.bc} PE:{st.pe} EC:{st.ec}"
+            for ap, st in sm.stock.items()
+        )
+        debug_print(f"[STOCKS] {resp.day}:{resp.hour} {stock_snapshot}")
 
+        # --- End of day summary ---
+        if resp.hour == 23:
+            day_total = sum(daily_costs)
+            day_avg = day_total / len(daily_costs)
+            end_of_day_cost = daily_costs[-1]
+            debug_print(f"[DAY] {resp.day} totalCost={day_total:.2f} avgCost={day_avg:.2f} endOfDayCost={end_of_day_cost:.2f}")
+            daily_costs = []  # reset for next day
+
+        # increment time
         hour += 1
         if hour == 24:
             hour = 0
             day += 1
+            if day > 29:
+                break
 
     debug_print("\n=== SIMULATION END ===")
-    
     debug_print("SESSION CLOSED BY BACKEND")
-
 
 if __name__ == "__main__":
     main()
