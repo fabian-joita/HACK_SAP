@@ -1,0 +1,13 @@
+steps made to create the frontend
+
+1. npm create vite@latest .
+2. npm run dev ---------- to run frontend
+
+
+
+to do in frontend
+
+npm install recharts
+
+run in the backend dir
+1. uvicorn backend:app --reload
